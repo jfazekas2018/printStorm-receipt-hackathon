@@ -88,6 +88,9 @@ Available fields:
 - `{tax}` - Tax amount
 - `{total}` - Total amount
 - `{item_list}` - List of purchased items
+- `{order_discount}` - Order-level promotions and discounts
+- `{tax_details}` - Detailed tax information including rate and calculated amount
+- `{item_discount_total}` - Total amount of all item-level discounts
 
 ### 7. Feed Element
 Adds blank lines (paper feed).

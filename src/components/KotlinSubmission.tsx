@@ -32,96 +32,191 @@ export const KotlinSubmission: React.FC<KotlinSubmissionProps> = ({
   const [teamName, setTeamName] = useState('');
   const [kotlinCode, setKotlinCode] = useState(`fun interpret(jsonString: String, printer: EpsonPrinter, order: Order?) {
     try {
-        // Parse the JSON design
+        // Parse the JSON DSL
         val json = JSONObject(jsonString)
+        val elements = json.getJSONArray("elements")
         
-        // Helper function to replace template variables with actual order data
-        fun replaceTemplateVars(text: String): String {
-            var result = text
-            if (order != null) {
-                result = result.replace("{{STORE_NAME}}", order.storeName)
-                result = result.replace("{{STORE_NUMBER}}", order.storeNumber)
-                result = result.replace("{{ORDER_ID}}", order.orderId)
-            }
-            return result
-        }
-        
-        // Process each element in the JSON
-        if (json.has("elements")) {
-            val elements = json.getJSONArray("elements")
+        // Process each element in sequence
+        for (i in 0 until elements.length()) {
+            val element = elements.getJSONObject(i)
+            val type = element.optString("type", "")
             
-            for (i in 0 until elements.length()) {
-                val element = elements.getJSONObject(i)
-                val type = element.getString("type")
+            when (type) {
+                "text" -> {
+                    val content = element.optString("content", "")
+                    printer.addText(content)
+                }
                 
-                when (type) {
-                    "text" -> {
-                        // Get content and replace template variables
-                        val content = replaceTemplateVars(element.optString("content", ""))
-                        
-                        // Check if there's a style object
-                        if (element.has("style")) {
-                            val style = element.getJSONObject("style")
-                            val textStyle = TextStyle(
-                                bold = style.optBoolean("bold", false),
-                                underline = style.optBoolean("underline", false),
-                                size = when (style.optString("size", "NORMAL")) {
-                                    "SMALL" -> TextSize.SMALL
-                                    "LARGE" -> TextSize.LARGE
-                                    "XLARGE" -> TextSize.XLARGE
-                                    else -> TextSize.NORMAL
-                                }
-                            )
-                            printer.addText(content, textStyle)
-                        } else {
-                            printer.addText(content)
-                        }
-                    }
-                    
-                    "items_list" -> {
-                        // Print items from the order
-                        if (order != null) {
-                            for (i in 0 until order.items.size) {
-                                val item = order.items[i]
-                                printer.addText("• " + item.name)
-                            }
-                        } else {
-                            printer.addText("(No items)")
-                        }
-                    }
-                    
-                    "align" -> {
-                        // Set text alignment
-                        val alignmentStr = element.optString("alignment", "LEFT")
-                        val alignment = when (alignmentStr) {
-                            "CENTER" -> Alignment.CENTER
-                            "RIGHT" -> Alignment.RIGHT
-                            else -> Alignment.LEFT
-                        }
-                        printer.addTextAlign(alignment)
-                    }
-                    
-                    "feedLine" -> {
-                        // Add blank lines
-                        val lines = element.optInt("lines", 1)
-                        printer.addFeedLine(lines)
-                    }
-                    
-                    "cutPaper" -> {
-                        // Cut the paper
-                        printer.cutPaper()
-                    }
-                    
-                    else -> {
-                        // Skip unknown types silently
-                    }
+                "dynamic" -> {
+                    val field = element.optString("field", "")
+                    val value = resolveDynamicField(field, order)
+                    printer.addText(value)
+                }
+                
+                "barcode" -> {
+                    val data = element.optString("data", "")
+                    // Simple barcode handling - let the printer handle the type
+                    printer.addText("[BARCODE: $data]")
+                }
+                
+                "qrcode" -> {
+                    val data = element.optString("data", "")
+                    printer.addText("[QR CODE: $data]")
+                }
+                
+                "image" -> {
+                    // Images not supported in this environment
+                    printer.addText("[IMAGE PLACEHOLDER]")
+                }
+                
+                "divider" -> {
+                    printer.addText("------------------------------")
+                }
+                
+                "feed" -> {
+                    val lines = element.optInt("lines", 1)
+                    printer.addFeedLine(lines)
+                }
+                
+                else -> {
+                    // Unknown element type - print warning but continue
+                    printer.addText("Unknown element: $type")
                 }
             }
         }
+        
+        // Add feed lines before cutting
+        printer.addFeedLine(5)
+        
+        // Always cut paper at the end
+        printer.cutPaper()
+        
     } catch (e: Exception) {
-        // If there's any error, print it to the receipt for debugging
-        printer.addText("Error in interpreter: " + e.message)
+        // Error handling - print error message on receipt
+        printer.addText("ERROR: Failed to process receipt")
+        printer.addText("Details: " + e.message)
+        printer.addFeedLine(3)
+        printer.cutPaper()
     }
+}
+
+// Helper function to resolve dynamic fields
+fun resolveDynamicField(field: String, order: Order?): String {
+    return when (field) {
+        "{store_name}" -> order?.storeName ?: "BYTE BURGERS"
+        "{store_address}" -> "123 Tech Ave, Silicon Valley"
+        "{store_number}" -> order?.storeNumber ?: "001"
+        "{cashier_name}" -> order?.customerInfo?.name ?: "Cashier"
+        "{timestamp}" -> java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss").format(java.util.Date())
+        "{order_number}" -> order?.orderId ?: "ORD-001234"
+        "{order_id}" -> order?.orderId ?: "A-0001"
+        "{subtotal}" -> order?.let { "$" + "%.2f".format(it.subtotal) } ?: "$25.99"
+        "{tax}" -> order?.let { "$" + "%.2f".format(it.taxAmount) } ?: "$2.34"
+        "{total}" -> order?.let { "$" + "%.2f".format(it.totalAmount) } ?: "$28.33"
+        "{item_list}" -> order?.let { formatItemList(it.items, it.itemPromotions) } ?: "1x Sample Item                    $8.99"
+        "{customer_name}" -> order?.customerInfo?.name ?: ""
+        "{customer_id}" -> order?.customerInfo?.customerId ?: ""
+        "{loyalty_points}" -> order?.customerInfo?.loyaltyPoints?.toString() ?: ""
+        "{member_status}" -> order?.customerInfo?.memberStatus ?: ""
+        "{payment_method}" -> order?.paymentMethod ?: ""
+        "{table_number}" -> order?.tableInfo?.tableNumber ?: ""
+        "{server_name}" -> order?.tableInfo?.serverName ?: ""
+        "{guest_count}" -> order?.tableInfo?.guestCount?.toString() ?: ""
+        "{order_discount}" -> order?.let { formatOrderDiscounts(it.orderPromotions) } ?: ""
+        "{tax_details}" -> order?.let { formatTaxDetails(it.taxRate, it.subtotal, it.taxAmount) } ?: formatTaxDetails(0.0875, 0.0, 0.0)
+        "{item_discount_total}" -> order?.let { calculateItemDiscountTotal(it.itemPromotions) } ?: "$0.00"
+        else -> field // Return as-is if not recognized
+    }
+}
+
+// Helper function to format item list with item-level discounts
+fun formatItemList(items: List<OrderItem>?, itemPromotions: List<ItemPromotion>?): String {
+    if (items == null || items.isEmpty()) {
+        return "No items"
+    }
+    
+    val itemText = StringBuilder()
+    for (item in items) {
+        itemText.append(item.quantity.toString() + "x " + item.name)
+        
+        // Add modifiers if present
+        item.modifiers?.let { modifiers ->
+            if (modifiers.isNotEmpty()) {
+                itemText.append(" (" + modifiers.joinToString(", ") + ")")
+            }
+        }
+        
+        // Add total price on the right side
+        itemText.append("                    $" + "%.2f".format(item.totalPrice))
+        itemText.append("\\n")
+        
+        // Only show @ price if quantity is more than 1
+        if (item.quantity > 1) {
+            itemText.append("  @ $" + "%.2f".format(item.unitPrice))
+            itemText.append("\\n")
+        }
+        
+        // Add item-level promotions underneath each item
+        itemPromotions?.let { itemPromos ->
+            for (promo in itemPromos) {
+                if (promo.itemSku == item.sku) {
+                    itemText.append("  " + promo.promotionName)
+                    itemText.append(" -$" + "%.2f".format(promo.discountAmount))
+                    itemText.append("\\n")
+                }
+            }
+        }
+    }
+    
+    return itemText.toString().trimEnd()
+}
+
+// Helper function to format order-level discounts
+fun formatOrderDiscounts(orderPromotions: List<OrderPromotion>?): String {
+    if (orderPromotions == null || orderPromotions.isEmpty()) {
+        return ""
+    }
+    
+    val discountText = StringBuilder()
+    discountText.append("ORDER DISCOUNTS:\\n")
+    
+    for (promo in orderPromotions) {
+        discountText.append(promo.promotionName)
+        discountText.append("\\n")
+        discountText.append("  Discount: -$" + "%.2f".format(promo.discountAmount))
+        discountText.append("\\n")
+        if (promo.promotionType.isNotEmpty()) {
+            discountText.append("  Type: " + promo.promotionType)
+            discountText.append("\\n")
+        }
+    }
+    
+    return discountText.toString().trimEnd()
+}
+
+// Helper function to format tax details
+fun formatTaxDetails(taxRate: Double, subtotal: Double, taxAmount: Double): String {
+    val taxText = StringBuilder()
+    taxText.append("TAX INFORMATION:\\n")
+    taxText.append("------------------------------\\n")
+    
+    val taxPercentage = (taxRate * 100).toString() + "%"
+    taxText.append("Tax Rate: $taxPercentage\\n")
+    
+    val calculatedTax = subtotal * taxRate
+    taxText.append("Tax Amount: $" + "%.2f".format(calculatedTax))
+    
+    return taxText.toString().trimEnd()
+}
+
+// Helper function to calculate total item discount amount
+fun calculateItemDiscountTotal(itemPromotions: List<ItemPromotion>?): String {
+    if (itemPromotions == null || itemPromotions.isEmpty()) {
+        return "$0.00"
+    }
+    
+    val totalDiscount = itemPromotions.sumOf { it.discountAmount }
+    return "$" + "%.2f".format(totalDiscount)
 }`);
   const [endpoint, setEndpoint] = useState<string | null>(null);
   const [teamId, setTeamId] = useState<string | null>(null);
