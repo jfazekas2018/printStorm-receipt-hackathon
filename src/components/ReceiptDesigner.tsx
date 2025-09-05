@@ -71,7 +71,8 @@ const ELEMENT_TEMPLATES: ElementTemplate[] = [
 
 const DYNAMIC_FIELDS = [
   '{store_name}', '{store_address}', '{cashier_name}', '{timestamp}',
-  '{order_number}', '{subtotal}', '{tax}', '{total}', '{item_list}'
+  '{order_number}', '{subtotal}', '{tax}', '{total}', '{item_list}',
+  '{order_discount}', '{tax_details}', '{item_discount_total}'
 ];
 
 const TEXT_SIZES = ['SMALL', 'NORMAL', 'LARGE', 'XLARGE'];
@@ -471,51 +472,55 @@ export const ReceiptDesigner: React.FC<ReceiptDesignerProps> = ({ onJsonUpdate }
   return (
     <div className="h-full flex bg-gray-900">
       {/* Element Palette */}
-      <div className="w-64 bg-gray-800 p-4 border-r border-gray-700">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-bold text-white">Elements</h2>
-          <button
-            onClick={() => setShowTemplates(!showTemplates)}
-            className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
-          >
-            Templates
-          </button>
-        </div>
-        
-        {showTemplates && (
-          <div className="mb-4 p-3 bg-gray-700 rounded-lg">
-            <h3 className="text-sm font-bold text-white mb-2">Quick Templates</h3>
-            <div className="space-y-2">
-              <button
-                onClick={() => loadTemplate('basic')}
-                className="w-full text-left text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded"
-              >
-                Basic Receipt
-              </button>
-              <button
-                onClick={() => loadTemplate('detailed')}
-                className="w-full text-left text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded"
-              >
-                Detailed Receipt
-              </button>
-            </div>
-          </div>
-        )}
-        
-        <div className="space-y-2">
-          {ELEMENT_TEMPLATES.map((template) => (
+      <div className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col h-full">
+        <div className="p-4 flex-shrink-0">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold text-white">Elements</h2>
             <button
-              key={template.type}
-              onClick={() => addElement(template)}
-              className="w-full flex items-center space-x-2 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-left transition-colors"
+              onClick={() => setShowTemplates(!showTemplates)}
+              className="text-xs bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded"
             >
-              <span className="text-xl">{template.icon}</span>
-              <span className="text-white">{template.name}</span>
+              Templates
             </button>
-          ))}
+          </div>
+          
+          {showTemplates && (
+            <div className="mb-4 p-3 bg-gray-700 rounded-lg">
+              <h3 className="text-sm font-bold text-white mb-2">Quick Templates</h3>
+              <div className="space-y-2">
+                <button
+                  onClick={() => loadTemplate('basic')}
+                  className="w-full text-left text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded"
+                >
+                  Basic Receipt
+                </button>
+                <button
+                  onClick={() => loadTemplate('detailed')}
+                  className="w-full text-left text-xs bg-gray-600 hover:bg-gray-500 text-white px-2 py-1 rounded"
+                >
+                  Detailed Receipt
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         
-        <div className="mt-6 pt-4 border-t border-gray-600">
+        <div className="flex-1 overflow-y-auto px-4">
+          <div className="space-y-2">
+            {ELEMENT_TEMPLATES.map((template) => (
+              <button
+                key={template.type}
+                onClick={() => addElement(template)}
+                className="w-full flex items-center space-x-2 p-3 bg-gray-700 hover:bg-gray-600 rounded-lg text-left transition-colors"
+              >
+                <span className="text-xl">{template.icon}</span>
+                <span className="text-white">{template.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+        
+        <div className="p-4 flex-shrink-0 border-t border-gray-600">
           <button
             onClick={() => setElements([])}
             className="w-full bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded text-sm"
@@ -527,13 +532,13 @@ export const ReceiptDesigner: React.FC<ReceiptDesignerProps> = ({ onJsonUpdate }
 
       {/* Receipt Canvas */}
       <div className="flex-1 flex">
-        <div className="flex-1 p-4">
+        <div className="flex-1 p-4 overflow-hidden">
           <h2 className="text-xl font-bold text-white mb-4">Receipt Preview</h2>
-          <div className="bg-white p-4 rounded-lg shadow-lg max-w-sm mx-auto">
+          <div className="bg-white p-4 rounded-lg shadow-lg max-w-sm mx-auto h-full max-h-[calc(100vh-8rem)] overflow-y-auto">
             <DragDropContext onDragEnd={handleDragEnd}>
               <Droppable droppableId="receipt">
                 {(provided) => (
-                  <div {...provided.droppableProps} ref={provided.innerRef}>
+                  <div {...provided.droppableProps} ref={provided.innerRef} className="min-h-full">
                     {elements.map((element, index) => (
                       <Draggable
                         key={element.id}
@@ -569,9 +574,13 @@ export const ReceiptDesigner: React.FC<ReceiptDesignerProps> = ({ onJsonUpdate }
         </div>
 
         {/* Properties Panel */}
-        <div className="w-80 bg-gray-800 p-4 border-l border-gray-700">
-          <h2 className="text-lg font-bold text-white mb-4">Properties</h2>
-          {renderPropertyPanel()}
+        <div className="w-80 bg-gray-800 border-l border-gray-700 flex flex-col h-full">
+          <div className="p-4 flex-shrink-0">
+            <h2 className="text-lg font-bold text-white mb-4">Properties</h2>
+          </div>
+          <div className="flex-1 overflow-y-auto px-4 pb-4">
+            {renderPropertyPanel()}
+          </div>
         </div>
       </div>
     </div>

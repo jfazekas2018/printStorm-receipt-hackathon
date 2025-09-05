@@ -45,7 +45,8 @@ const DEFAULT_JS_INTERPRETER = `function interpret(jsonString, printer, order) {
         case '{subtotal}': return '$25.99';
         case '{tax}': return '$2.34';
         case '{total}': return '$28.33';
-        case '{item_list}': return '1x Sample Item - $8.99';
+        case '{item_list}': return '1x Sample Item                    $8.99';
+        case '{item_discount_total}': return '$0.00';
         default: return field; // Return as-is if not recognized
       }
     }
@@ -62,7 +63,7 @@ const DEFAULT_JS_INTERPRETER = `function interpret(jsonString, printer, order) {
       case '{subtotal}': return '$' + (order.subtotal || 0).toFixed(2);
       case '{tax}': return '$' + (order.taxAmount || 0).toFixed(2);
       case '{total}': return '$' + (order.totalAmount || 0).toFixed(2);
-      case '{item_list}': return formatItemList(order.items || [], order.itemPromotions || []);
+              case '{item_list}': return order.items ? formatItemList(order.items, order.itemPromotions || []) : '1x Sample Item                    $8.99';
       case '{customer_name}': return order.customerInfo?.name || '';
       case '{customer_id}': return order.customerInfo?.customerId || '';
       case '{loyalty_points}': return (order.customerInfo?.loyaltyPoints || '').toString();
@@ -71,6 +72,9 @@ const DEFAULT_JS_INTERPRETER = `function interpret(jsonString, printer, order) {
       case '{table_number}': return order.tableInfo?.tableNumber || '';
       case '{server_name}': return order.tableInfo?.serverName || '';
       case '{guest_count}': return (order.tableInfo?.guestCount || '').toString();
+      case '{order_discount}': return formatOrderDiscounts(order.orderPromotions || []);
+      case '{tax_details}': return formatTaxDetails(order.taxRate || 0.0875, order.subtotal || 0, order.taxAmount || 0);
+      case '{item_discount_total}': return calculateItemDiscountTotal(order.itemPromotions || []);
       default: return field; // Return as-is if not recognized
     }
   }
@@ -90,18 +94,67 @@ const DEFAULT_JS_INTERPRETER = `function interpret(jsonString, printer, order) {
         itemText += \` (\${item.modifiers.join(', ')})\`;
       }
       
-      itemText += \` - $\${item.totalPrice.toFixed(2)}\`;
+      // Add total price on the right side
+      itemText += \`                    $\${item.totalPrice.toFixed(2)}\`;
+      itemText += '\\n';
+      
+      // Only show @ price if quantity is more than 1
+      if (item.quantity > 1) {
+        itemText += \`  @ $\${item.unitPrice.toFixed(2)}\`;
+        itemText += '\\n';
+      }
       
       // Check for item-specific promotions
       const itemPromo = promotions.find(p => p.itemSku === item.sku);
       if (itemPromo) {
-        itemText += \`\\n  PROMO: \${itemPromo.promotionName} -$\${itemPromo.discountAmount.toFixed(2)}\`;
+        itemText += \`  \${itemPromo.promotionName} -$\${itemPromo.discountAmount.toFixed(2)}\\n\`;
       }
-      
-      itemText += '\\n';
     });
     
     return itemText.trim();
+  }
+  
+  // Format order-level discounts
+  function formatOrderDiscounts(orderPromotions) {
+    if (!orderPromotions || orderPromotions.length === 0) {
+      return '';
+    }
+    
+    let discountText = 'ORDER DISCOUNTS:\\n';
+    
+    orderPromotions.forEach(promo => {
+      discountText += promo.promotionName + '\\n';
+      discountText += '  Discount: -$' + promo.discountAmount.toFixed(2) + '\\n';
+      if (promo.promotionType && promo.promotionType.trim() !== '') {
+        discountText += '  Type: ' + promo.promotionType + '\\n';
+      }
+    });
+    
+    return discountText.trim();
+  }
+  
+  // Format tax details
+  function formatTaxDetails(taxRate, subtotal, taxAmount) {
+    let taxText = 'TAX INFORMATION:\\n';
+    taxText += '------------------------------\\n';
+    
+    const taxPercentage = (taxRate * 100).toFixed(2) + '%';
+    taxText += 'Tax Rate: ' + taxPercentage + '\\n';
+    
+    const calculatedTax = subtotal * taxRate;
+    taxText += 'Tax Amount: $' + calculatedTax.toFixed(2);
+    
+    return taxText.trim();
+  }
+  
+  // Calculate total item discount amount
+  function calculateItemDiscountTotal(itemPromotions) {
+    if (!itemPromotions || itemPromotions.length === 0) {
+      return '$0.00';
+    }
+    
+    const totalDiscount = itemPromotions.reduce((sum, promo) => sum + promo.discountAmount, 0);
+    return '$' + totalDiscount.toFixed(2);
   }
   
   // Process each element in the JSON DSL
@@ -636,7 +689,7 @@ export const ReceiptPreview: React.FC<ReceiptPreviewProps> = ({ jsonDsl }) => {
 // {store_name}, {store_address}, {store_number}
 // {cashier_name}, {timestamp}, {order_number}
 // {subtotal}, {tax}, {total}, {item_list}
-// {customer_name}, {payment_method}, etc.`}
+// {order_discount}, {tax_details}, {item_discount_total}, {customer_name}, {payment_method}, etc.`}
                   </pre>
                 </details>
               </div>
